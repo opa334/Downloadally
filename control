@@ -1,7 +1,7 @@
 Package: com.opa334.downloadally
 Name: Downloadally
 Depends: mobilesubstrate
-Version: 1.0.0
+Version: 1.0.1
 Architecture: iphoneos-arm
 Description: Adds a download button to musically!
 Maintainer: opa334
