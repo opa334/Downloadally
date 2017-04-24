@@ -56,7 +56,7 @@ NSURL *prevURL = nil; //Storing previous video path here (for comparing)
 
   //Configure button to look like the others
   [downloadButton addTarget:self action:@selector(saveVideo) forControlEvents:UIControlEventTouchUpInside];
-  [downloadButton setImage:[UIImage imageWithContentsOfFile:@"/var/mobile/Library/Application Support/Downloadally.bundle/download.png"] forState:UIControlStateNormal];
+  [downloadButton setImage:[UIImage imageWithContentsOfFile:@"/Library/Application Support/Downloadally.bundle/download.png"] forState:UIControlStateNormal];
   downloadButton.adjustsImageWhenHighlighted = true;
   downloadButton.frame = downloadButtonFrame;
   [downloadButton setUp];
