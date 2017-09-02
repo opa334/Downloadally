@@ -1,130 +1,202 @@
-#include "headers/Musical.h"
-#include "headers/MLMusicalTableViewCell.h"
-#include "headers/MLRoundButton.h"
-#include "headers/MLRoundImageView.h"
-#include "headers/WPSAlertController.m" //To make presenting AlertControllers more easy
-#include <Photos/Photos.h>
+#import <Photos/Photos.h>
+
+static UIColor* buttonColor = [UIColor colorWithRed:0 green:0 blue:0 alpha:0.1];
+static UIColor* successColor = [UIColor colorWithRed:0.2 green:0.7 blue:0.15 alpha:1];
+
+@interface Musical : NSObject
+- (NSString*)movieURLLocalPath;
+- (NSString*)movieURLFullPath;
+- (NSString*)movieURLFileName;
+- (BOOL)movieURLIsCached;
+@end
+
+@interface MLMusicalsTableViewController : UITableViewController
+@end
+
+@interface MLRoundButton : UIButton
+@end
+
+@interface MLMusicalTableViewCell : UITableViewCell
+@property(nonatomic) UIStackView* rightStackView;
+@property(nonatomic) MLMusicalsTableViewController* parentTable;
+@property(nonatomic) Musical* musical;
+@property(nonatomic,retain) MLRoundButton* downloadButton; //new
+- (void)saveMusicalToPhotos; //new
+- (void)downloadButtonPressed; //new
+@end
 
 %hook MLMusicalTableViewCell
 
-MLRoundButton *downloadButton = [objc_getClass("MLRoundButton") buttonWithType:UIButtonTypeCustom]; //The button
-CGRect downloadButtonFrame; //Frame for button
-_Bool firstStart = true; //Self explanatory
-NSURL *currentURL = nil; //Storing current video path here
-NSURL *prevURL = nil; //Storing previous video path here (for comparing)
-
-- (void)layoutSubviews
-{
-  if(firstStart)
-  {
-    downloadButtonFrame = self.commentsButton.frame; //Assign frame on first start
-    firstStart = false;
-  }
-
-  int moveUpBy = 49; //Value to move the buttons up
-
-  //Check if method was already run / buttons are already moved (sometimes it gets executed more than one time)
-  if(self.moreActionButton.frame.origin.y - moveUpBy == self.commentsButton.frame.origin.y)
-  {
-    //Move all buttons up by the variable "moveUpBy"
-    self.userAvatarImageView.frame = CGRectMake(self.userAvatarImageView.frame.origin.x,self.userAvatarImageView.frame.origin.y - moveUpBy,self.userAvatarImageView.frame.size.width,self.userAvatarImageView.frame.size.height);
-    self.likeNumLabel.frame = CGRectMake(self.likeNumLabel.frame.origin.x,self.likeNumLabel.frame.origin.y - moveUpBy,self.likeNumLabel.frame.size.width,self.likeNumLabel.frame.size.height);
-    self.likeButton.frame = CGRectMake(self.likeButton.frame.origin.x,self.likeButton.frame.origin.y - moveUpBy,self.likeButton.frame.size.width,self.likeButton.frame.size.height);
-    self.commentsNumLabel.frame = CGRectMake(self.commentsNumLabel.frame.origin.x,self.commentsNumLabel.frame.origin.y - moveUpBy,self.commentsNumLabel.frame.size.width,self.commentsNumLabel.frame.size.height);
-    self.commentsButton.frame = CGRectMake(self.commentsButton.frame.origin.x,self.commentsButton.frame.origin.y - moveUpBy,self.commentsButton.frame.size.width,self.commentsButton.frame.size.height);
-  }
-  %orig;
-}
-
-- (void)continuePlay
-{
-  %orig;
-  [self setButton];
-}
-
-- (void)startPlay
-{
-  %orig;
-  [self setButton];
-}
+%property(nonatomic,retain) MLRoundButton *downloadButton;
 
 %new
-- (void)setButton
+- (void)saveMusicalToPhotos
 {
-  //Set current URL
-  currentURL = [NSURL URLWithString:[NSString stringWithFormat:@"%@", [self.musical movieURLLocalPath]]];
-
-  //Configure button to look like the others
-  [downloadButton addTarget:self action:@selector(saveVideo) forControlEvents:UIControlEventTouchUpInside];
-  [downloadButton setImage:[UIImage imageWithContentsOfFile:@"/Library/Application Support/Downloadally.bundle/download.png"] forState:UIControlStateNormal];
-  downloadButton.adjustsImageWhenHighlighted = true;
-  downloadButton.frame = downloadButtonFrame;
-  [downloadButton setUp];
-  [downloadButton setBackgroundColor:[UIColor colorWithRed:0 green:0 blue:0 alpha:0.1]];
-
-  //Add button
-  [self addSubview:downloadButton];
-}
-
-%new
-- (void)saveVideo
-{
-  //Resolves an issue where a single video would be saved mulitple times
-  if(currentURL != prevURL)
+  if([self.musical movieURLIsCached])
   {
-    PHAuthorizationStatus status = [PHPhotoLibrary authorizationStatus];
-    switch (status)
+    //Musical is cached -> Save cached file to photos
+
+    //Get path of cached file
+    NSURL* localPath = [NSURL fileURLWithPath:[self.musical movieURLLocalPath]];
+
+    [[PHPhotoLibrary sharedPhotoLibrary] performChanges:^
     {
-      //Access to photos granted, save video
-      case PHAuthorizationStatusAuthorized:
-          [[PHPhotoLibrary sharedPhotoLibrary] performChanges:^
-          {
-            [PHAssetChangeRequest creationRequestForAssetFromVideoAtFileURL:currentURL];
-          }
-          completionHandler:^(BOOL success, NSError *error){}];
-          [downloadButton setBackgroundColor:[UIColor colorWithRed:0.18 green:0.7 blue:0.15 alpha:1]];
-          [downloadButton.superview addSubview:downloadButton];
-          break;
-
-      //Permission not determined yet, ask user
-      case PHAuthorizationStatusNotDetermined:
-      [PHPhotoLibrary requestAuthorization:^(PHAuthorizationStatus authorizationStatus)
-      {
-        //Save video if user grants permission
-        if (authorizationStatus == PHAuthorizationStatusAuthorized)
-          {
-            [[PHPhotoLibrary sharedPhotoLibrary] performChanges:^
-            {
-              [PHAssetChangeRequest creationRequestForAssetFromVideoAtFileURL:currentURL];
-            }
-            completionHandler:^(BOOL success, NSError *error){}];
-            [downloadButton setBackgroundColor:[UIColor colorWithRed:0.18 green:0.7 blue:0.15 alpha:1]];
-            [downloadButton.superview addSubview:downloadButton];
-          }
-      }];
-        break;
-
-        //If permission was denied, show a popup asking for permission
-        default:
-          WPSAlertController *permissionError = [WPSAlertController alertControllerWithTitle:@"Error" message:@"Musical.ly needs permissions to photos in order for downloadally to save videos" preferredStyle:UIAlertControllerStyleAlert];
-
-          UIAlertAction *cancel = [UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleDefault handler:^(UIAlertAction * action)
-          {
-            [permissionError dismissViewControllerAnimated:YES completion:nil];
-          }];
-
-          UIAlertAction *settings = [UIAlertAction actionWithTitle:@"Settings" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action)
-          {
-            [[UIApplication sharedApplication] openURL:[NSURL URLWithString:UIApplicationOpenSettingsURLString]];
-          }];
-
-          [permissionError addAction:cancel];
-          [permissionError addAction:settings];
-          [permissionError show];
-          break;
+      //Save file to photos
+      [PHAssetChangeRequest creationRequestForAssetFromVideoAtFileURL:localPath];
     }
+      completionHandler:^(BOOL success, NSError *error)
+    {
+      if(success)
+      {
+        dispatch_async(dispatch_get_main_queue(),
+        ^{
+          //Update background color to reflect that saving was successful
+          [self.downloadButton setBackgroundColor:successColor];
+        });
+      }
+    }];
   }
-  //Set "previous" path for next download
-  prevURL = currentURL;
+  else
+  {
+    //Musical is not cached -> Download video and save it to photos
+
+    //Get videoURL
+    NSURL* videoURL = [NSURL URLWithString:[self.musical movieURLFullPath]];
+
+    //Get sharedSession
+    NSURLSession* session = [NSURLSession sharedSession];
+
+    //Create download task
+    NSURLSessionDownloadTask* musicalDownloadTask =
+      [session downloadTaskWithURL:videoURL
+      completionHandler:^(NSURL *location, NSURLResponse *response, NSError *error)
+    {
+      //Get expected filename
+      NSString* filename = [self.musical movieURLFileName];
+
+      NSLog(@"filename: %@", filename);
+
+      //Rename file to filename
+      [location setResourceValue:filename forKey:NSURLNameKey error:nil];
+
+      //Update location with new filename
+      location = [[location URLByDeletingLastPathComponent]
+        URLByAppendingPathComponent:filename];
+
+      if(!error)
+      {
+        [[PHPhotoLibrary sharedPhotoLibrary] performChanges:^
+        {
+          //Save downloaded file to photos
+          [PHAssetChangeRequest creationRequestForAssetFromVideoAtFileURL:location];
+        }
+          completionHandler:^(BOOL success, NSError *error)
+        {
+          //Remove file
+          [[NSFileManager defaultManager] removeItemAtURL:location error:nil];
+
+          if(success)
+          {
+            dispatch_async(dispatch_get_main_queue(),
+            ^{
+              //Update background color to reflect that saving was successful
+              [self.downloadButton setBackgroundColor:successColor];
+            });
+          }
+        }];
+      }
+    }];
+
+    //Start download
+    [musicalDownloadTask resume];
+  }
 }
+
+%new
+- (void)downloadButtonPressed
+{
+  PHAuthorizationStatus status = [PHPhotoLibrary authorizationStatus];
+  switch(status)
+  {
+    case PHAuthorizationStatusNotDetermined:
+    [PHPhotoLibrary requestAuthorization:^(PHAuthorizationStatus authorizationStatus)
+    {
+      //Save video if user grants permission
+      if(authorizationStatus == PHAuthorizationStatusAuthorized)
+      {
+        [self saveMusicalToPhotos];
+      }
+    }];
+    break;
+
+    case PHAuthorizationStatusAuthorized:
+    //Save musical
+    [self saveMusicalToPhotos];
+    break;
+
+    case PHAuthorizationStatusDenied:
+    UIAlertController* permissionAlert = [UIAlertController
+      alertControllerWithTitle:@"Error"
+      message:@"In order to save a video through Downloadally, musical.ly needs permissions to photos!"
+      preferredStyle:UIAlertControllerStyleAlert];
+
+    UIAlertAction* cancelAction = [UIAlertAction actionWithTitle:@"Cancel"
+      style:UIAlertActionStyleCancel
+      handler:nil];
+
+    UIAlertAction* settingsAction = [UIAlertAction actionWithTitle:@"Settings"
+    style:UIAlertActionStyleDefault
+    handler:^(UIAlertAction* action)
+    {
+      [[UIApplication sharedApplication]
+        openURL:[NSURL URLWithString:UIApplicationOpenSettingsURLString]];
+    }];
+
+    [permissionAlert addAction:cancelAction];
+    [permissionAlert addAction:settingsAction];
+
+    [self.parentTable presentViewController:permissionAlert animated:YES completion:nil];
+
+    break;
+  }
+}
+
+%end
+
+%hook MLMusicalsTableViewController
+
+- (id)configureCell:(MLMusicalTableViewCell*)cell atIndexPath:(id)indexPath
+{
+  if(!cell.downloadButton)
+  {
+    //Create MLRoundButton
+    cell.downloadButton = [%c(MLRoundButton) buttonWithType:UIButtonTypeCustom];
+
+    //Add target function
+    [cell.downloadButton addTarget:cell action:@selector(downloadButtonPressed)
+      forControlEvents:UIControlEventTouchUpInside];
+
+    //Set image to download icon
+    [cell.downloadButton setImage:[UIImage imageWithContentsOfFile:
+      @"/Library/Application Support/Downloadally.bundle/Download.png"]
+      forState:UIControlStateNormal];
+
+    //Make it look and feel like the other buttons
+    cell.downloadButton.adjustsImageWhenHighlighted = YES;
+    [cell.downloadButton setBackgroundColor:buttonColor];
+    [cell.downloadButton.heightAnchor constraintEqualToConstant:48].active = true;
+    [cell.downloadButton.widthAnchor constraintEqualToConstant:48].active = true;
+
+    //Add button to StackView
+    [cell.rightStackView insertArrangedSubview:cell.downloadButton
+      atIndex:[cell.rightStackView.arrangedSubviews count] - 2];
+  }
+  else
+  {
+    [cell.downloadButton setBackgroundColor:buttonColor];
+  }
+
+  return %orig;
+}
+
 %end
