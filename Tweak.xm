@@ -189,7 +189,7 @@ static UIColor* successColor = [UIColor colorWithRed:0.2 green:0.7 blue:0.15 alp
 
     //Add button to StackView
     [cell.rightStackView insertArrangedSubview:cell.downloadButton
-      atIndex:[cell.rightStackView.arrangedSubviews count] - 2];
+      atIndex:[cell.rightStackView.arrangedSubviews count] - 1];
   }
   else
   {
