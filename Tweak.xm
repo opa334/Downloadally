@@ -3,7 +3,7 @@
 static UIColor* buttonColor = [UIColor colorWithRed:0 green:0 blue:0 alpha:0.1];
 static UIColor* successColor = [UIColor colorWithRed:0.2 green:0.7 blue:0.15 alpha:1];
 
-@interface Musical : NSObject
+@interface MLNMusical : NSObject
 - (NSString*)movieURLLocalPath;
 - (NSString*)movieURLFullPath;
 - (NSString*)movieURLFileName;
@@ -16,10 +16,14 @@ static UIColor* successColor = [UIColor colorWithRed:0.2 green:0.7 blue:0.15 alp
 @interface MLRoundButton : UIButton
 @end
 
+@interface MLMusicalCellViewModel : NSObject
+@property(retain, nonatomic) MLNMusical *musical;
+@end
+
 @interface MLMusicalTableViewCell : UITableViewCell
 @property(nonatomic) UIStackView* rightStackView;
 @property(nonatomic) MLMusicalsTableViewController* parentTable;
-@property(nonatomic) Musical* musical;
+@property(retain, nonatomic) MLMusicalCellViewModel *viewModel;
 @property(nonatomic,retain) MLRoundButton* downloadButton; //new
 - (void)saveMusicalToPhotos; //new
 - (void)downloadButtonPressed; //new
@@ -32,12 +36,12 @@ static UIColor* successColor = [UIColor colorWithRed:0.2 green:0.7 blue:0.15 alp
 %new
 - (void)saveMusicalToPhotos
 {
-  if([self.musical movieURLIsCached])
+  if([self.viewModel.musical movieURLIsCached])
   {
     //Musical is cached -> Save cached file to photos
 
     //Get path of cached file
-    NSURL* localPath = [NSURL fileURLWithPath:[self.musical movieURLLocalPath]];
+    NSURL* localPath = [NSURL fileURLWithPath:[self.viewModel.musical movieURLLocalPath]];
 
     [[PHPhotoLibrary sharedPhotoLibrary] performChanges:^
     {
@@ -61,7 +65,7 @@ static UIColor* successColor = [UIColor colorWithRed:0.2 green:0.7 blue:0.15 alp
     //Musical is not cached -> Download video and save it to photos
 
     //Get videoURL
-    NSURL* videoURL = [NSURL URLWithString:[self.musical movieURLFullPath]];
+    NSURL* videoURL = [NSURL URLWithString:[self.viewModel.musical movieURLFullPath]];
 
     //Get sharedSession
     NSURLSession* session = [NSURLSession sharedSession];
@@ -72,9 +76,7 @@ static UIColor* successColor = [UIColor colorWithRed:0.2 green:0.7 blue:0.15 alp
       completionHandler:^(NSURL *location, NSURLResponse *response, NSError *error)
     {
       //Get expected filename
-      NSString* filename = [self.musical movieURLFileName];
-
-      NSLog(@"filename: %@", filename);
+      NSString* filename = [self.viewModel.musical movieURLFileName];
 
       //Rename file to filename
       [location setResourceValue:filename forKey:NSURLNameKey error:nil];
