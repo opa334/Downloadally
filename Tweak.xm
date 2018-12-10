@@ -1,116 +1,125 @@
 #import <Photos/Photos.h>
 
-static UIColor* buttonColor = [UIColor colorWithRed:0 green:0 blue:0 alpha:0.1];
 static UIColor* successColor = [UIColor colorWithRed:0.2 green:0.7 blue:0.15 alpha:1];
+static CGFloat initialConstant = 0;
 
-@interface MLNMusical : NSObject
-- (NSString*)movieURLLocalPath;
-- (NSString*)movieURLFullPath;
-- (NSString*)movieURLFileName;
-- (BOOL)movieURLIsCached;
+@interface AWEButton : UIButton
 @end
 
-@interface MLMusicalsTableViewController : UITableViewController
+@interface AWEFeedVideoButton : AWEButton
+@property(retain, nonatomic) UIImageView* aweImageView;
+@property(retain, nonatomic) UIView* containerView;
+@property(copy, nonatomic) void (^touchUpInsideBlock)(void);
++ (id)noTextButtonWithImageName:(NSString*)name shouldFit:(BOOL)shouldFit;
+- (void)setImage:(UIImage*)image;
 @end
 
-@interface MLRoundButton : UIButton
+@interface AWEMusicCoverButton : AWEButton
 @end
 
-@interface MLMusicalCellViewModel : NSObject
-@property(retain, nonatomic) MLNMusical *musical;
+@interface AWEURLModel : NSObject
+@property(retain, nonatomic) NSArray* originURLList;
 @end
 
-@interface MLMusicalTableViewCell : UITableViewCell
-@property(nonatomic) UIStackView* rightStackView;
-@property(nonatomic) MLMusicalsTableViewController* parentTable;
-@property(retain, nonatomic) MLMusicalCellViewModel *viewModel;
-@property(nonatomic,retain) MLRoundButton* downloadButton; //new
-- (void)saveMusicalToPhotos; //new
-- (void)downloadButtonPressed; //new
+@interface AWEVideoModel : NSObject
+@property(readonly, nonatomic) AWEURLModel* playURL;
+@property(readonly, nonatomic) AWEURLModel* downloadURL;
 @end
 
-%hook MLMusicalTableViewCell
+@interface AWEAwemeModel : NSObject
+@property(retain, nonatomic) AWEVideoModel* video;
+@end
 
-%property(nonatomic,retain) MLRoundButton *downloadButton;
+@interface AWEAwemePlayInteractionViewController : UIViewController
+@property(retain, nonatomic) AWEFeedVideoButton* likeButton;
+@property(nonatomic, retain) AWEFeedVideoButton* downloadButton;
+@property(retain, nonatomic) AWEFeedVideoButton* shareButton;
+@property(retain, nonatomic) AWEMusicCoverButton* musicButton;
+@property(retain, nonatomic) AWEAwemeModel* model;
 
-%new
-- (void)saveMusicalToPhotos
+//new
+- (void)downloadButtonPressed;
+- (void)saveMusicalToPhotos;
+@end
+
+%hook AWEAwemePlayInteractionViewController
+
+%property(nonatomic, retain) AWEFeedVideoButton *downloadButton;
+
+- (instancetype)initWithMediaType:(NSInteger)type
 {
-  if([self.viewModel.musical movieURLIsCached])
+  self = %orig;
+
+  self.downloadButton = [%c(AWEFeedVideoButton) noTextButtonWithImageName:nil shouldFit:YES];
+  self.downloadButton.translatesAutoresizingMaskIntoConstraints = NO;
+
+  __weak typeof(self) weakSelf = self;
+  self.downloadButton.touchUpInsideBlock = ^()
   {
-    //Musical is cached -> Save cached file to photos
+    [weakSelf downloadButtonPressed];
+  };
 
-    //Get path of cached file
-    NSURL* localPath = [NSURL fileURLWithPath:[self.viewModel.musical movieURLLocalPath]];
+  //The share image is an arrow facing to the right, so we can just rotate it downwards and reuse it
+  UIImage* downloadImage = [[[UIImage alloc] initWithCGImage:self.shareButton.aweImageView.image.CGImage scale:1.0 orientation:UIImageOrientationRight] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
 
-    [[PHPhotoLibrary sharedPhotoLibrary] performChanges:^
-    {
-      //Save file to photos
-      [PHAssetChangeRequest creationRequestForAssetFromVideoAtFileURL:localPath];
-    }
-      completionHandler:^(BOOL success, NSError *error)
-    {
-      if(success)
-      {
-        dispatch_async(dispatch_get_main_queue(),
-        ^{
-          //Update background color to reflect that saving was successful
-          [self.downloadButton setBackgroundColor:successColor];
-        });
-      }
-    }];
-  }
-  else
+  [self.downloadButton setImage:downloadImage];
+  self.downloadButton.tintColor = [UIColor whiteColor];
+
+  //Ensure that the image view always has the same size as the button
+  NSDictionary* views = @{@"imageView" : self.downloadButton.aweImageView, @"containerView" : self.downloadButton.containerView};
+  [self.downloadButton.containerView addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"V:|-0-[imageView]-0-|" options:0 metrics:nil views:views]];
+  [self.downloadButton.containerView addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"H:|-0-[imageView]-0-|" options:0 metrics:nil views:views]];
+  [self.downloadButton addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"V:|-0-[containerView]-0-|" options:0 metrics:nil views:views]];
+  [self.downloadButton addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"H:|-0-[containerView]-0-|" options:0 metrics:nil views:views]];
+
+  return self;
+}
+
+- (void)updateAllSubViews
+{
+  %orig;
+
+  //Reset tint color
+  self.downloadButton.tintColor = [UIColor whiteColor];
+
+  NSLayoutConstraint* neededConstraint;
+
+  //Find constraint to modify (space between muisc button and share button)
+  for(NSLayoutConstraint* c in self.view.constraints)
   {
-    //Musical is not cached -> Download video and save it to photos
-
-    //Get videoURL
-    NSURL* videoURL = [NSURL URLWithString:[self.viewModel.musical movieURLFullPath]];
-
-    //Get sharedSession
-    NSURLSession* session = [NSURLSession sharedSession];
-
-    //Create download task
-    NSURLSessionDownloadTask* musicalDownloadTask =
-      [session downloadTaskWithURL:videoURL
-      completionHandler:^(NSURL *location, NSURLResponse *response, NSError *error)
+    if([c.firstItem isEqual:self.shareButton] && [c.secondItem isEqual:self.musicButton])
     {
-      //Get expected filename
-      NSString* filename = [self.viewModel.musical movieURLFileName];
-
-      //Rename file to filename
-      [location setResourceValue:filename forKey:NSURLNameKey error:nil];
-
-      //Update location with new filename
-      location = [[location URLByDeletingLastPathComponent]
-        URLByAppendingPathComponent:filename];
-
-      if(!error)
+      if(c.firstAttribute == NSLayoutAttributeBottom && c.secondAttribute == NSLayoutAttributeTop)
       {
-        [[PHPhotoLibrary sharedPhotoLibrary] performChanges:^
+        if(c.relation == NSLayoutRelationEqual)
         {
-          //Save downloaded file to photos
-          [PHAssetChangeRequest creationRequestForAssetFromVideoAtFileURL:location];
+          neededConstraint = c;
+          break;
         }
-          completionHandler:^(BOOL success, NSError *error)
-        {
-          //Remove file
-          [[NSFileManager defaultManager] removeItemAtURL:location error:nil];
-
-          if(success)
-          {
-            dispatch_async(dispatch_get_main_queue(),
-            ^{
-              //Update background color to reflect that saving was successful
-              [self.downloadButton setBackgroundColor:successColor];
-            });
-          }
-        }];
       }
-    }];
+    }
+  }
 
-    //Start download
-    [musicalDownloadTask resume];
+  //The first time this method is ran we set the initial constant to compare against it later
+  //I could also just check for -40 but I want to be future proof if that value changes
+  static dispatch_once_t onceToken = 0;
+  dispatch_once(&onceToken,
+  ^{
+    initialConstant = neededConstraint.constant;
+  });
+
+  if(neededConstraint.constant == initialConstant)
+  {
+    //Modify constraint to make space for the new button
+    neededConstraint.constant -= 53.333333;
+
+    //Add download button to view
+    [self.view addSubview:self.downloadButton];
+
+    //Add constraints for download button
+    NSDictionary* views = @{@"downloadButton" : self.downloadButton, @"shareButton" : self.shareButton};
+    [self.view addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"V:[shareButton]-10-[downloadButton(38)]" options:0 metrics:nil views:views]];
+    [self.view addConstraints:[NSLayoutConstraint constraintsWithVisualFormat:@"H:[downloadButton(40)]-10.6666-|" options:0 metrics:nil views:views]];
   }
 }
 
@@ -139,10 +148,10 @@ static UIColor* successColor = [UIColor colorWithRed:0.2 green:0.7 blue:0.15 alp
     case PHAuthorizationStatusDenied:
     UIAlertController* permissionAlert = [UIAlertController
       alertControllerWithTitle:@"Error"
-      message:@"In order to save a video through Downloadally, musical.ly needs permissions to photos!"
+      message:@"In order to save a video through Downloadally, TikTok needs permissions to photos!"
       preferredStyle:UIAlertControllerStyleAlert];
 
-    UIAlertAction* cancelAction = [UIAlertAction actionWithTitle:@"Cancel"
+    UIAlertAction* cancelAction = [UIAlertAction actionWithTitle:@"Close"
       style:UIAlertActionStyleCancel
       handler:nil];
 
@@ -157,48 +166,62 @@ static UIColor* successColor = [UIColor colorWithRed:0.2 green:0.7 blue:0.15 alp
     [permissionAlert addAction:cancelAction];
     [permissionAlert addAction:settingsAction];
 
-    [self.parentTable presentViewController:permissionAlert animated:YES completion:nil];
+    [self presentViewController:permissionAlert animated:YES completion:nil];
 
     break;
   }
 }
 
-%end
-
-%hook MLMusicalsTableViewController
-
-- (id)configureCell:(MLMusicalTableViewCell*)cell atIndexPath:(id)indexPath
+%new
+- (void)saveMusicalToPhotos
 {
-  if(!cell.downloadButton)
+  //Get videoURL
+  NSURL* videoURL = [NSURL URLWithString:self.model.video.playURL.originURLList.firstObject];
+
+  //Get sharedSession
+  NSURLSession* session = [NSURLSession sharedSession];
+
+  //Create download task
+  NSURLSessionDownloadTask* musicalDownloadTask =
+    [session downloadTaskWithURL:videoURL
+    completionHandler:^(NSURL* location, NSURLResponse* response, NSError* error)
   {
-    //Create MLRoundButton
-    cell.downloadButton = [%c(MLRoundButton) buttonWithType:UIButtonTypeCustom];
+    //Get expected filename
+    NSString* filename = [[videoURL lastPathComponent] stringByAppendingPathExtension:@"mp4"];
 
-    //Add target function
-    [cell.downloadButton addTarget:cell action:@selector(downloadButtonPressed)
-      forControlEvents:UIControlEventTouchUpInside];
+    //Rename file to filename
+    [location setResourceValue:filename forKey:NSURLNameKey error:nil];
 
-    //Set image to download icon
-    [cell.downloadButton setImage:[UIImage imageWithContentsOfFile:
-      @"/Library/Application Support/Downloadally.bundle/Download.png"]
-      forState:UIControlStateNormal];
+    //Update location with new filename
+    location = [[location URLByDeletingLastPathComponent]
+      URLByAppendingPathComponent:filename];
 
-    //Make it look and feel like the other buttons
-    cell.downloadButton.adjustsImageWhenHighlighted = YES;
-    [cell.downloadButton setBackgroundColor:buttonColor];
-    [cell.downloadButton.heightAnchor constraintEqualToConstant:48].active = true;
-    [cell.downloadButton.widthAnchor constraintEqualToConstant:48].active = true;
+    if(!error)
+    {
+      [[PHPhotoLibrary sharedPhotoLibrary] performChanges:^
+      {
+        //Save downloaded file to photos
+        [PHAssetChangeRequest creationRequestForAssetFromVideoAtFileURL:location];
+      }
+        completionHandler:^(BOOL success, NSError* error)
+      {
+        //Remove file
+        [[NSFileManager defaultManager] removeItemAtURL:location error:nil];
 
-    //Add button to StackView
-    [cell.rightStackView insertArrangedSubview:cell.downloadButton
-      atIndex:[cell.rightStackView.arrangedSubviews count] - 1];
-  }
-  else
-  {
-    [cell.downloadButton setBackgroundColor:buttonColor];
-  }
+        if(success)
+        {
+          dispatch_async(dispatch_get_main_queue(),
+          ^{
+            //Update tint color to reflect that saving was successful
+            self.downloadButton.tintColor = successColor;
+          });
+        }
+      }];
+    }
+  }];
 
-  return %orig;
+  //Start download
+  [musicalDownloadTask resume];
 }
 
 %end
